@@ -114,12 +114,27 @@ func (s *Store) GetDomainByName(ctx context.Context, domain string) (*DomainReco
 func (s *Store) ListSubdomainsForDomain(ctx context.Context, apex string) ([]string, error) {
 	apex = strings.ToLower(strings.TrimSpace(apex))
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT cn.name
-		FROM certificate_names cn
-		WHERE cn.registered_domain = $1
-		  AND cn.name != $1
-		  AND cn.name LIKE '%.' || $1
-		ORDER BY cn.name ASC
+		SELECT DISTINCT name FROM (
+			SELECT cn.name AS name
+			FROM certificate_names cn
+			WHERE cn.registered_domain = $1
+			  AND cn.name != $1
+			  AND cn.name NOT LIKE '*.%'
+			  AND cn.name LIKE '%.' || $1
+			UNION
+			SELECT h.hostname AS name
+			FROM hosts h
+			WHERE h.hostname != $1
+			  AND h.hostname NOT LIKE '*.%'
+			  AND (h.registered_domain = $1 OR h.hostname LIKE '%.' || $1)
+			UNION
+			SELECT d.name AS name
+			FROM dns_records d
+			WHERE d.name != $1
+			  AND d.name NOT LIKE '*.%'
+			  AND d.name LIKE '%.' || $1
+		) subdomains
+		ORDER BY name ASC
 	`, apex)
 	if err != nil {
 		return nil, err
@@ -481,4 +496,12 @@ func registrableDomainForSeed(host string) (string, bool) {
 		return "", false
 	}
 	return registrableDomain(domain), true
+}
+
+func apexDomain(host string) (queryHost string, apex string, err error) {
+	queryHost, err = normalizeDomain(host)
+	if err != nil {
+		return "", "", err
+	}
+	return queryHost, registrableDomain(queryHost), nil
 }

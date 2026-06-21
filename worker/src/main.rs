@@ -5,6 +5,7 @@ mod models;
 
 use async_nats::Subscriber;
 use collectors::{ct, dns, http, rdap, tls};
+use collectors::domain::registrable_domain;
 use db::{
     create_pool, insert_event, mark_job_completed, mark_job_failed, mark_job_running,
     persist_collector_result,
@@ -196,6 +197,10 @@ async fn handle_enrich(
     payload: &[u8],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let job: EnrichDomainJob = serde_json::from_slice(payload)?;
+    let apex = registrable_domain(&job.domain);
+    if apex.is_empty() {
+        return Err("empty apex domain".into());
+    }
     let collectors = if job.collectors.is_empty() {
         vec!["ct".into(), "rdap".into(), "dns".into()]
     } else {
@@ -227,7 +232,7 @@ async fn handle_enrich(
 
         match result {
             Ok(collector_result) => {
-                intelligence::persist_enrichment(pool, &job.domain, &collector, &collector_result).await?;
+                intelligence::persist_enrichment(pool, &apex, &collector, &collector_result).await?;
             }
             Err(e) => {
                 eprintln!("enrich {} for {}: {}", collector, job.domain, e);

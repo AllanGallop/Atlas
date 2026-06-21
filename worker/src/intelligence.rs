@@ -460,15 +460,18 @@ fn map_discovery(
     }
 }
 
-async fn upsert_host(pool: &deadpool_postgres::Object, host: &str, apex: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+async fn upsert_host(pool: &deadpool_postgres::Object, host: &str, _apex: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let registered = registrable_domain(host);
     let id = new_id("host");
     let row = pool
         .query_one(
             "INSERT INTO hosts (id, hostname, registered_domain, first_seen, last_seen)
              VALUES ($1, $2, $3, NOW(), NOW())
-             ON CONFLICT (hostname) DO UPDATE SET last_seen = NOW()
+             ON CONFLICT (hostname) DO UPDATE SET
+               last_seen = NOW(),
+               registered_domain = EXCLUDED.registered_domain
              RETURNING id",
-            &[&id, &host, &apex],
+            &[&id, &host, &registered],
         )
         .await?;
     Ok(row.get(0))
@@ -477,14 +480,17 @@ async fn upsert_host(pool: &deadpool_postgres::Object, host: &str, apex: &str) -
 async fn upsert_host_tx(
     tx: &tokio_postgres::Transaction<'_>,
     host: &str,
-    apex: &str,
+    _apex: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let registered = registrable_domain(host);
     let id = new_id("host");
     tx.execute(
         "INSERT INTO hosts (id, hostname, registered_domain, first_seen, last_seen)
          VALUES ($1, $2, $3, NOW(), NOW())
-         ON CONFLICT (hostname) DO UPDATE SET last_seen = NOW()",
-        &[&id, &host, &apex],
+         ON CONFLICT (hostname) DO UPDATE SET
+           last_seen = NOW(),
+           registered_domain = EXCLUDED.registered_domain",
+        &[&id, &host, &registered],
     )
     .await?;
     Ok(())

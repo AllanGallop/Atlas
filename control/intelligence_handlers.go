@@ -35,7 +35,8 @@ func (s *Server) seedDomains(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		domainID, err := s.store.UpsertDomain(r.Context(), domain)
+		apex := registrableDomain(domain)
+		domainID, err := s.store.UpsertDomain(r.Context(), apex)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -47,11 +48,13 @@ func (s *Server) seedDomains(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		queued++
-		results = append(results, map[string]interface{}{
+		entry := map[string]interface{}{
 			"domain":    domain,
+			"apex":      apex,
 			"domain_id": domainID,
 			"status":    "queued",
-		})
+		}
+		results = append(results, entry)
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
@@ -93,36 +96,41 @@ func domainHandler(s *Server) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		_, apex, err := apexDomain(domain)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		if len(parts) == 1 && r.Method == http.MethodGet {
-			s.getDomain(w, r, domain)
+			s.getDomain(w, r, apex, domain)
 			return
 		}
 		if len(parts) == 2 {
 			switch parts[1] {
 			case "subdomains":
 				if r.Method == http.MethodGet {
-					s.getDomainSubdomains(w, r, domain)
+					s.getDomainSubdomains(w, r, apex)
 					return
 				}
 			case "certificates":
 				if r.Method == http.MethodGet {
-					s.getDomainCertificates(w, r, domain)
+					s.getDomainCertificates(w, r, apex)
 					return
 				}
 			case "rdap":
 				if r.Method == http.MethodGet {
-					s.getDomainRDAP(w, r, domain)
+					s.getDomainRDAP(w, r, apex, domain)
 					return
 				}
 			case "dns":
 				if r.Method == http.MethodGet {
-					s.getDomainDNS(w, r, domain)
+					s.getDomainDNS(w, r, apex, domain)
 					return
 				}
 			case "pivots":
 				if r.Method == http.MethodGet {
-					s.getDomainPivots(w, r, domain)
+					s.getDomainPivots(w, r, apex)
 					return
 				}
 			case "enrich":
@@ -193,8 +201,8 @@ func pivotHandler(s *Server) http.HandlerFunc {
 	}
 }
 
-func (s *Server) getDomain(w http.ResponseWriter, r *http.Request, domain string) {
-	record, err := s.store.GetDomainByName(r.Context(), domain)
+func (s *Server) getDomain(w http.ResponseWriter, r *http.Request, apex string, queriedHost string) {
+	record, err := s.store.GetDomainByName(r.Context(), apex)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -204,12 +212,18 @@ func (s *Server) getDomain(w http.ResponseWriter, r *http.Request, domain string
 		return
 	}
 
-	edges, _ := s.store.ListGraphEdgesForDomain(r.Context(), domain)
+	edges, _ := s.store.ListGraphEdgesForDomain(r.Context(), apex)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"domain": record,
 		"edges":  edges,
-	})
+	}
+	if queriedHost != apex {
+		resp["queried_host"] = queriedHost
+		resp["apex"] = apex
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) getDomainSubdomains(w http.ResponseWriter, r *http.Request, domain string) {
@@ -238,8 +252,8 @@ func (s *Server) getDomainCertificates(w http.ResponseWriter, r *http.Request, d
 	})
 }
 
-func (s *Server) getDomainRDAP(w http.ResponseWriter, r *http.Request, domain string) {
-	record, err := s.store.GetDomainByName(r.Context(), domain)
+func (s *Server) getDomainRDAP(w http.ResponseWriter, r *http.Request, apex string, queriedHost string) {
+	record, err := s.store.GetDomainByName(r.Context(), apex)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -255,30 +269,51 @@ func (s *Server) getDomainRDAP(w http.ResponseWriter, r *http.Request, domain st
 		return
 	}
 	if rdap == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"domain": domain,
+		resp := map[string]interface{}{
+			"domain": apex,
 			"rdap":   nil,
-		})
+		}
+		if queriedHost != apex {
+			resp["queried_host"] = queriedHost
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"domain": domain,
+	resp := map[string]interface{}{
+		"domain": apex,
 		"rdap":   rdap,
-	})
+	}
+	if queriedHost != apex {
+		resp["queried_host"] = queriedHost
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) getDomainDNS(w http.ResponseWriter, r *http.Request, domain string) {
-	records, err := s.store.ListDNSForDomain(r.Context(), domain)
+func (s *Server) getDomainDNS(w http.ResponseWriter, r *http.Request, apex string, queriedHost string) {
+	records, err := s.store.ListDNSForDomain(r.Context(), apex)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"domain":  domain,
+	if queriedHost != apex {
+		filtered := make([]DNSRecord, 0, len(records))
+		for _, rec := range records {
+			if rec.Name == queriedHost || strings.HasSuffix(rec.Name, "."+queriedHost) {
+				filtered = append(filtered, rec)
+			}
+		}
+		records = filtered
+	}
+	resp := map[string]interface{}{
+		"domain":  apex,
 		"records": records,
 		"count":   len(records),
-	})
+	}
+	if queriedHost != apex {
+		resp["queried_host"] = queriedHost
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) getDomainPivots(w http.ResponseWriter, r *http.Request, domain string) {
@@ -300,7 +335,8 @@ func (s *Server) enrichDomain(w http.ResponseWriter, r *http.Request, domain str
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	collectors := normalizeCollectors(req.Collectors)
-	domainID, err := s.store.UpsertDomain(r.Context(), domain)
+	apex := registrableDomain(domain)
+	domainID, err := s.store.UpsertDomain(r.Context(), apex)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -313,9 +349,10 @@ func (s *Server) enrichDomain(w http.ResponseWriter, r *http.Request, domain str
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"domain":    domain,
-		"domain_id": domainID,
-		"status":    "queued",
+		"domain":     domain,
+		"apex":       apex,
+		"domain_id":  domainID,
+		"status":     "queued",
 		"collectors": collectors,
 	})
 }
