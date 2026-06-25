@@ -15,6 +15,7 @@ struct BootstrapFile {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RDAPResponse {
     #[serde(default)]
     ldh_name: Option<String>,
@@ -26,19 +27,23 @@ struct RDAPResponse {
     nameservers: Vec<RDAPNameserver>,
     #[serde(default)]
     entities: Vec<RDAPEntity>,
-    #[serde(default)]
+    #[serde(default, rename = "secureDNS")]
     secure_dns: Option<RDAPSecureDNS>,
     #[serde(default)]
     port43: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RDAPEvent {
-    event_action: String,
-    event_date: String,
+    #[serde(default)]
+    event_action: Option<String>,
+    #[serde(default)]
+    event_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RDAPNameserver {
     #[serde(default)]
     ldh_name: Option<String>,
@@ -47,6 +52,7 @@ struct RDAPNameserver {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RDAPEntity {
     #[serde(default)]
     handle: Option<String>,
@@ -67,6 +73,7 @@ struct RDAPRemark {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RDAPSecureDNS {
     #[serde(default)]
     delegation_signed: Option<bool>,
@@ -279,8 +286,8 @@ fn vcard_org(entity: &RDAPEntity) -> Option<String> {
 fn find_event_date(events: &[RDAPEvent], action: &str) -> Option<String> {
     events
         .iter()
-        .find(|e| e.event_action == action)
-        .map(|e| e.event_date.clone())
+        .find(|e| e.event_action.as_deref() == Some(action))
+        .and_then(|e| e.event_date.clone())
 }
 
 fn is_redacted(entities: &[RDAPEntity]) -> bool {
@@ -322,12 +329,12 @@ mod tests {
     fn find_event_date_matches_action() {
         let events = vec![
             RDAPEvent {
-                event_action: "registration".into(),
-                event_date: "2019-01-01T00:00:00Z".into(),
+                event_action: Some("registration".into()),
+                event_date: Some("2019-01-01T00:00:00Z".into()),
             },
             RDAPEvent {
-                event_action: "expiration".into(),
-                event_date: "2030-01-01T00:00:00Z".into(),
+                event_action: Some("expiration".into()),
+                event_date: Some("2030-01-01T00:00:00Z".into()),
             },
         ];
         assert_eq!(
@@ -335,6 +342,42 @@ mod tests {
             Some("2019-01-01T00:00:00Z")
         );
         assert!(find_event_date(&events, "last changed").is_none());
+    }
+
+    #[test]
+    fn rdap_response_deserializes_nominet_camel_case() {
+        let raw = json!({
+            "ldhName": "skullfire.co.uk",
+            "status": ["active"],
+            "events": [
+                {"eventAction": "registration", "eventDate": "2025-04-07T06:11:00Z"},
+                {"eventAction": "expiration", "eventDate": "2027-04-07T06:11:00Z"}
+            ],
+            "nameservers": [
+                {"ldhName": "ns1.example.co.uk.", "unicodeName": "ns1.example.co.uk."}
+            ],
+            "entities": [{
+                "handle": "1AND1",
+                "roles": ["registrar"],
+                "vcardArray": ["vcard", [["fn", {}, "text", "Ionos SE"]]]
+            }],
+            "secureDNS": {"delegationSigned": false}
+        });
+
+        let rdap: RDAPResponse = serde_json::from_value(raw).expect("nominet rdap json");
+        assert_eq!(rdap.ldh_name.as_deref(), Some("skullfire.co.uk"));
+        assert_eq!(find_event_date(&rdap.events, "registration").as_deref(), Some("2025-04-07T06:11:00Z"));
+        assert_eq!(rdap.nameservers[0].ldh_name.as_deref(), Some("ns1.example.co.uk."));
+        assert_eq!(find_entity_org(&rdap.entities, &["registrar"]).as_deref(), Some("Ionos SE"));
+        assert_eq!(rdap.secure_dns.and_then(|s| s.delegation_signed), Some(false));
+    }
+
+    #[test]
+    fn rdap_event_tolerates_missing_action() {
+        let events: Vec<RDAPEvent> =
+            serde_json::from_value(json!([{"eventDate": "2025-04-07T06:11:00Z"}])).unwrap();
+        assert!(events[0].event_action.is_none());
+        assert!(find_event_date(&events, "registration").is_none());
     }
 
     #[test]
