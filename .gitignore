@@ -1,0 +1,5 @@
+worker/target/
+control/control
+*.exe
+.env
+.DS_Store

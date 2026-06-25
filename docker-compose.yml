@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=256MB"]
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4223:4222"
+      - "8223:8222"
+
+  control-api:
+    build: ./control
+    ports:
+      - "8090:8090"
+    environment:
+      LISTEN_ADDR: ":8090"
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+  worker:
+    build: ./worker
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
+      WORKER_CONCURRENCY: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      control-api:
+        condition: service_started
+      nats:
+        condition: service_started
+
+  ct-ingestor:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile.ct-ingestor
+    environment:
+      DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
+      CT_POLL_INTERVAL_SECS: "15"
+    depends_on:
+      postgres:
+        condition: service_healthy

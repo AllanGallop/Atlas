@@ -1,0 +1,534 @@
+openapi: 3.0.3
+info:
+  title: Atlas Control API
+  version: 0.1.0
+  description: |
+    HTTP API for domain intelligence, graph pivots, and discovery campaigns.
+    Workers consume jobs from NATS; CT ingestion runs as a separate service.
+
+servers:
+  - url: http://localhost:8090
+    description: Local docker-compose stack
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: atlas-control
+
+  /metrics:
+    get:
+      summary: Operational metrics (JSON)
+      operationId: getMetrics
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [prometheus]
+      responses:
+        "200":
+          description: Metrics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSnapshot"
+
+  /metrics/prometheus:
+    get:
+      summary: Prometheus metrics
+      operationId: getPrometheusMetrics
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /domains:
+    post:
+      summary: Seed domains for enrichment
+      operationId: seedDomains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeedDomainsRequest"
+      responses:
+        "202":
+          description: Enrichment queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeedDomainsResponse"
+
+  /domains/{domain}:
+    get:
+      summary: Get domain intelligence
+      operationId: getDomain
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: Domain record and edges
+        "404":
+          description: Domain not found
+
+  /domains/{domain}/subdomains:
+    get:
+      summary: List subdomains from CT store
+      operationId: getDomainSubdomains
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: Subdomain list
+
+  /domains/{domain}/certificates:
+    get:
+      summary: List certificates for domain
+      operationId: getDomainCertificates
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: Certificate list
+
+  /domains/{domain}/rdap:
+    get:
+      summary: Latest RDAP record
+      operationId: getDomainRdap
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: RDAP record or null
+
+  /domains/{domain}/dns:
+    get:
+      summary: DNS records for domain
+      operationId: getDomainDns
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: DNS record list
+
+  /domains/{domain}/pivots:
+    get:
+      summary: Pivot summary for domain
+      operationId: getDomainPivots
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      responses:
+        "200":
+          description: Available pivot artifacts
+
+  /domains/{domain}/enrich:
+    post:
+      summary: Re-queue domain enrichment
+      operationId: enrichDomain
+      parameters:
+        - $ref: "#/components/parameters/domain"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collectors:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "202":
+          description: Enrichment queued
+
+  /pivots/nameserver/{value}:
+    get:
+      summary: Pivot by nameserver
+      operationId: pivotNameserver
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/registrar/{value}:
+    get:
+      summary: Pivot by registrar
+      operationId: pivotRegistrar
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/certificate/{value}:
+    get:
+      summary: Pivot by certificate fingerprint
+      operationId: pivotCertificate
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/mx/{value}:
+    get:
+      summary: Pivot by MX host
+      operationId: pivotMx
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/favicon/{value}:
+    get:
+      summary: Pivot by favicon hash
+      operationId: pivotFavicon
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/entity/{value}:
+    get:
+      summary: Pivot by RDAP entity handle
+      operationId: pivotEntity
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /pivots/tracker/{value}:
+    get:
+      summary: Pivot by analytics tracker ID
+      operationId: pivotTracker
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PivotResponse"
+
+  /ct/config:
+    get:
+      summary: Get CT ingestor config
+      operationId: getCtConfig
+      responses:
+        "200":
+          description: Ingestor configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CtConfig"
+    put:
+      summary: Update CT ingestor config
+      operationId: setCtConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CtConfig"
+      responses:
+        "200":
+          description: Config updated
+
+  /ct/backfill:
+    post:
+      summary: Enable TLD-targeted CT backfill
+      operationId: startCtBackfill
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CtBackfillRequest"
+      responses:
+        "202":
+          description: Backfill enabled
+
+  /ct/status:
+    get:
+      summary: CT ingestion status
+      operationId: getCtStatus
+      responses:
+        "200":
+          description: Log progress and counts
+
+  /campaigns:
+    get:
+      summary: List campaigns
+      operationId: listCampaigns
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Campaign list
+    post:
+      summary: Create discovery campaign
+      operationId: createCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignRequest"
+      responses:
+        "201":
+          description: Campaign created
+
+  /campaigns/{id}:
+    get:
+      summary: Get campaign
+      operationId: getCampaign
+      parameters:
+        - $ref: "#/components/parameters/campaignId"
+      responses:
+        "200":
+          description: Campaign details
+
+  /campaigns/{id}/progress:
+    get:
+      summary: Campaign progress
+      operationId: getCampaignProgress
+      parameters:
+        - $ref: "#/components/parameters/campaignId"
+      responses:
+        "200":
+          description: Job counts
+
+  /campaigns/{id}/expand:
+    post:
+      summary: Approve expansion entities
+      operationId: expandCampaign
+      parameters:
+        - $ref: "#/components/parameters/campaignId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entity_ids]
+              properties:
+                entity_ids:
+                  type: array
+                  items:
+                    type: string
+                collectors:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "202":
+          description: Expansion queued
+
+components:
+  parameters:
+    domain:
+      name: domain
+      in: path
+      required: true
+      schema:
+        type: string
+        example: example.com
+    campaignId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    PivotResponse:
+      description: Domains sharing pivot artifact
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              pivot_type:
+                type: string
+              value:
+                type: string
+              domains:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PivotDomain"
+              count:
+                type: integer
+
+  schemas:
+    SeedDomainsRequest:
+      type: object
+      required: [domains]
+      properties:
+        domains:
+          type: array
+          items:
+            type: string
+        collectors:
+          type: array
+          items:
+            type: string
+
+    SeedDomainsResponse:
+      type: object
+      properties:
+        domains:
+          type: array
+          items:
+            type: object
+        jobs_queued:
+          type: integer
+        collectors:
+          type: array
+          items:
+            type: string
+
+    PivotDomain:
+      type: object
+      properties:
+        domain:
+          type: string
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+
+    CtConfig:
+      type: object
+      properties:
+        target_tlds:
+          type: array
+          items:
+            type: string
+        backfill_mode:
+          type: boolean
+        include_readonly:
+          type: boolean
+        batches_per_cycle:
+          type: integer
+        batch_size:
+          type: integer
+
+    CtBackfillRequest:
+      type: object
+      properties:
+        target_tlds:
+          type: array
+          items:
+            type: string
+        include_readonly:
+          type: boolean
+        batches_per_cycle:
+          type: integer
+        batch_size:
+          type: integer
+
+    CreateCampaignRequest:
+      type: object
+      required: [seeds]
+      properties:
+        seeds:
+          type: array
+          items:
+            type: string
+        collectors:
+          type: array
+          items:
+            type: string
+        depth:
+          type: integer
+        limits:
+          type: object
+          properties:
+            max_depth:
+              type: integer
+            max_entities:
+              type: integer
+
+    MetricsSnapshot:
+      type: object
+      properties:
+        collected_at:
+          type: string
+          format: date-time
+        campaigns:
+          type: object
+          additionalProperties:
+            type: integer
+        jobs:
+          type: object
+        intelligence:
+          type: object
+        ct:
+          type: object
+        infra:
+          type: object
+          properties:
+            nats:
+              type: string
+            redis:
+              type: string

@@ -1,0 +1,33 @@
+[package]
+name = "atlas-worker"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "atlas-worker"
+path = "src/main.rs"
+
+[[bin]]
+name = "atlas-ct-ingestor"
+path = "src/bin/ct_ingestor.rs"
+
+[dependencies]
+async-nats = "0.38"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+deadpool-postgres = "0.14"
+futures = "0.3"
+hickory-resolver = { version = "0.24", features = ["tokio"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-chrono-0_4"] }
+tokio-rustls = "0.26"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+webpki-roots = "0.26"
+x509-parser = "0.16"
