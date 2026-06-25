@@ -38,6 +38,7 @@ func TestRegistrableDomain(t *testing.T) {
 		{"*.example.com", "example.com"},
 		{"shop.example.co.uk", "example.co.uk"},
 		{"deep.shop.example.co.uk", "example.co.uk"},
+		{"aprs.skullfire.co.uk", "skullfire.co.uk"},
 		{"example.com", "example.com"},
 		{"localhost", "localhost"},
 	}
@@ -46,6 +47,21 @@ func TestRegistrableDomain(t *testing.T) {
 		if got := registrableDomain(tc.host); got != tc.want {
 			t.Errorf("registrableDomain(%q) = %q, want %q", tc.host, got, tc.want)
 		}
+	}
+}
+
+func TestApexDomain(t *testing.T) {
+	query, apex, err := apexDomain("aprs.skullfire.co.uk")
+	if err != nil {
+		t.Fatalf("apexDomain error: %v", err)
+	}
+	if query != "aprs.skullfire.co.uk" || apex != "skullfire.co.uk" {
+		t.Fatalf("apexDomain = (%q, %q), want (aprs.skullfire.co.uk, skullfire.co.uk)", query, apex)
+	}
+
+	_, apex, err = apexDomain("skullfire.co.uk")
+	if err != nil || apex != "skullfire.co.uk" {
+		t.Fatalf("apex domain self-resolve = %q, err=%v", apex, err)
 	}
 }
 

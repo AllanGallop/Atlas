@@ -74,6 +74,7 @@ mod tests {
     fn registrable_domain_handles_multi_part_suffix() {
         assert_eq!(registrable_domain("api.example.com"), "example.com");
         assert_eq!(registrable_domain("shop.example.co.uk"), "example.co.uk");
+        assert_eq!(registrable_domain("aprs.skullfire.co.uk"), "skullfire.co.uk");
         assert_eq!(registrable_domain("*.cdn.example.com"), "example.com");
     }
 
