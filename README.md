@@ -1,7 +1,8 @@
-[<img src=".github/images/logo.png" alt="Atlas Logo" width="320"/>](.github/images/logo.png)
+[<img src=".github/images/logo.png" alt="Atlas Logo"/>](.github/images/logo.png)
 
 # Atlas
 
+[![CI](https://github.com/AllanGallop/Atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/AllanGallop/Atlas/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -12,7 +13,7 @@
 
 External surface discovery and domain intelligence graph.
 
-Atlas ingests public Certificate Transparency logs, RDAP, and DNS directly — no crt.sh, no third-party reverse WHOIS APIs — and builds a searchable graph you can pivot across safely.
+Atlas collects the internet's breadcrumbs and turns them into a graph you can pivot in milliseconds. It continuously ingests Certificate Transparency, RDAP, and DNS to build a searchable internet graph. No crt.sh. No rate-limited reverse WHOIS APIs. 
 
 ## Documentation
 
