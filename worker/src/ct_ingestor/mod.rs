@@ -101,6 +101,11 @@ struct CTEntry {
     extra_data: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct CTEntriesResponse {
+    entries: Vec<CTEntry>,
+}
+
 pub struct ParsedCert {
     pub fingerprint_sha256: String,
     pub subject_cn: Option<String>,
@@ -306,13 +311,14 @@ async fn ingest_log_batch(
     let end = std::cmp::min(start + batch_size - 1, sth.tree_size.saturating_sub(1));
 
     let entries_url = format!("{base}/ct/v1/get-entries?start={start}&end={end}");
-    let entries: Vec<CTEntry> = client
+    let response: CTEntriesResponse = client
         .get(&entries_url)
         .timeout(Duration::from_secs(60))
         .send()
         .await?
         .json()
         .await?;
+    let entries = response.entries;
 
     let now = Utc::now();
     for entry in entries {
@@ -597,5 +603,14 @@ mod tests {
         let cfg = IngestorConfig::default();
         assert!(!cfg.target_tlds.is_empty());
         assert!(cfg.batch_size > 0);
+    }
+
+    #[test]
+    fn ct_entries_response_parses_wrapped_json() {
+        let body = r#"{"entries":[{"leaf_input":"YWJj","extra_data":"ZGVm"}]}"#;
+        let parsed: CTEntriesResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(parsed.entries[0].leaf_input, "YWJj");
+        assert_eq!(parsed.entries[0].extra_data, "ZGVm");
     }
 }
